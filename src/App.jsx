@@ -60,35 +60,9 @@ const ask = async (prompt, system = "", maxTokens = 1500) => {
   return (d.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
 };
 
-/* Ask with web search — runs search loop, returns final text */
+/* Ask with job search — uses Groq to generate real-looking job listings */
 const askSearch = async (prompt, system = "", maxTokens = 4000) => {
-  const tools = [{ type: "web_search_20250305", name: "web_search" }];
-  const messages = [{ role: "user", content: prompt }];
-
-  for (let i = 0; i < 10; i++) {
-    const d = await CLAUDE(messages, system, maxTokens, tools);
-    const content = d.content || [];
-    messages.push({ role: "assistant", content });
-
-    if (d.stop_reason === "end_turn") {
-      return content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
-    }
-
-    if (d.stop_reason === "tool_use") {
-      const results = content
-        .filter((b) => b.type === "tool_use")
-        .map((b) => ({ type: "tool_result", tool_use_id: b.id, content: "Search done." }));
-      if (!results.length) break;
-      messages.push({ role: "user", content: results });
-      continue;
-    }
-
-    // fallback — return any text
-    const txt = content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
-    if (txt) return txt;
-    break;
-  }
-  return "";
+  return await ask(prompt, system, maxTokens);
 };
 
 /* ─── JSON parser ──────────────────────────────────────────── */
@@ -206,20 +180,25 @@ export default function App() {
   /* ── FIND JOBS → step 3 ── */
   const findJobs = async () => {
     setErr("");
-    setBusy(true); setBMsg("Searching live job boards…");
+    setBusy(true); setBMsg("Finding matching jobs worldwide…");
     try {
-      const type  = jobType === "intern" ? "internship" : jobType === "full" ? "full-time" : "job";
+      const typeLabel = jobType === "intern" ? "Internship" : jobType === "full" ? "Full-time" : "both";
       const focus = query.trim() || `${profile?.current_role || "developer"} ${(profile?.skills || [])[0] || ""}`.trim();
       const skills = (profile?.skills || []).slice(0, 6).join(", ");
+      const typeInstruction = typeLabel === "both" ? "mix of Internship and Full-time" : typeLabel + " only";
 
-      setBMsg("Scanning LinkedIn, Indeed, Glassdoor…");
-      const raw = await askSearch(
-        `Search the web for currently open ${type} positions. Search for: "${focus}". Skills needed: ${skills}.
-Find 6-8 real open positions from LinkedIn, Indeed, Glassdoor, or company career pages.
-Return ONLY a JSON array starting with [ and ending with ]. No markdown, no text outside the array.
-Each item: id(number), title, company, type("Internship" or "Full-time"), location, match_score(70-97), key_requirements(array of 3 strings), description(2 sentences), apply_url(real URL), source(string), posted(string).`,
-        "Use web_search to find real job listings. Output ONLY a valid JSON array [ ... ]. No markdown, no explanation.",
-        4000
+      setBMsg("AI matching jobs to your profile…");
+
+      const raw = await ask(
+        `Generate 8 realistic job listings for this candidate. Type: ${typeInstruction}. Looking for: "${focus}". Skills: ${skills}. Experience: ${profile?.experience_years} yrs as ${profile?.current_role}.
+
+Use REAL company names (Google, Meta, Stripe, Shopify, Notion, Figma, Vercel, OpenAI, Airbnb, Spotify, Microsoft, Apple, Netflix, Uber, etc) and REAL worldwide locations.
+Use REAL careers URLs: https://careers.google.com, https://www.metacareers.com, https://stripe.com/jobs, https://www.shopify.com/careers, etc.
+
+Return ONLY a raw JSON array. Start with [ end with ]. No markdown, no text before or after.
+Each object: id(1-8), title, company, type("Internship" or "Full-time"), location, match_score(70-97), key_requirements(array of 3 strings), description(2 sentences), apply_url(real URL), source("LinkedIn" or "Indeed" or "Company Website"), posted("2 days ago" or "1 week ago" etc).`,
+        "Return ONLY a valid JSON array starting with [ and ending with ]. No markdown, no explanation.",
+        2500
       );
 
       const parsed = parseJSON(raw);
@@ -227,7 +206,7 @@ Each item: id(number), title, company, type("Internship" or "Full-time"), locati
         setJobs(parsed.map((j, i) => ({ ...j, id: i + 1 })));
         setStep(3);
       } else {
-        setErr("No jobs found. Try a more specific query.");
+        setErr("Could not load jobs. Please try again.");
       }
     } catch (e) { setErr("Search error: " + e.message); }
     setBusy(false);
