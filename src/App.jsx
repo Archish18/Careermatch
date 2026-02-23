@@ -31,7 +31,6 @@ const readDOCX = async (file) => {
 
 /* ─── Claude API ───────────────────────────────────────────── */
 const CLAUDE = async (messages, system = "", maxTokens = 1500, tools = null) => {
-  const apiKey = typeof import.meta !== "undefined" && import.meta.env?.VITE_ANTHROPIC_API_KEY;
   const body = {
     model: "claude-sonnet-4-5",
     max_tokens: maxTokens,
@@ -40,12 +39,12 @@ const CLAUDE = async (messages, system = "", maxTokens = 1500, tools = null) => 
   };
   if (tools) body.tools = tools;
 
-  const headers = { "Content-Type": "application/json" };
-  if (apiKey) headers["x-api-key"] = apiKey;
+  // Use local proxy (works on Vercel) — avoids CORS issues
+  const endpoint = "/api/claude";
 
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
+  const r = await fetch(endpoint, {
     method: "POST",
-    headers,
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!r.ok) {
